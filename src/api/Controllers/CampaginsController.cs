@@ -1,17 +1,38 @@
 ﻿using System;
 using Microsoft.AspNetCore.Mvc;
 using CodeFlip.CodeJar.Api.Models;
+using Microsoft.Extensions.Configuration;
+using Microsoft.Azure.Storage.Blob;
 
 namespace CodeFlip.CodeJar.Api.Controllers
 {
     [ApiController]
     public class CampaginsController : ControllerBase
     {
+
+        SQL foo {get;set;}
+
+        private IConfiguration _config { get; set; }
+
+
+        public ctr(IConfiguration Config)
+        {
+           _config = Config;
+        }
+
+        public CloudBlockBlob CBB { get; set; }
+
+
         [HttpGet("campaigns")]
         public IActionResult GetAllCampaigns()
         {
+
+            //CloudBlockBlob foo = new CloudBlockBlob(_config.GetSection("SeedBlobUrl").DownloadRangeToByteArray());
+            //var sql = new SQL(_config.GetConnectionString("SQLConnnection"), _config.GetSection("SeedBlobUrl"));
+
+
             return Ok(
-                new []
+                new[]
                 {
                     new { id = "1", name = "campaign 01", numberOfCodes = "10", dateActive = DateTime.Now, dateExpires = DateTime.Now.AddDays(1) },
                     new { id = "2", name = "campaign 02", numberOfCodes = "100", dateActive = DateTime.Now.AddDays(1), dateExpires = DateTime.Now.AddDays(2) },
@@ -29,6 +50,10 @@ namespace CodeFlip.CodeJar.Api.Controllers
         [HttpPost("campaigns")]
         public IActionResult CreateCampaign([FromBody] CreateCampaignRequest request)
         {
+            var sql = new SQL(_config.GetConnectionString("SQLConnnection"), _config.GetSection("SeedBlobUrl"));
+
+            sql.CreateCampaign();
+
             return Ok();
         }
 
@@ -46,7 +71,7 @@ namespace CodeFlip.CodeJar.Api.Controllers
                 {
                     pageNumber = page,
                     pageCount = 1,
-                    codes = new[] { new { stringValue = "ASKJSJQ", state = 1 }, new { stringValue = "AWEORJZ", state = 2 }}
+                    codes = new[] { new { stringValue = "ASKJSJQ", state = 1 }, new { stringValue = "AWEORJZ", state = 2 } }
                 }
             );
         }
