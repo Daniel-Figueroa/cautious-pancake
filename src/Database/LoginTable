@@ -1,0 +1,5 @@
+USE ExamDatabase
+GO
+CREATE TABLE [Login](
+    ID int  PRIMARY KEY NOT NULL,
+    EmailAddress VARCHAR(50) UNIQUE NOT NULL)
