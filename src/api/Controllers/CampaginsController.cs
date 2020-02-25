@@ -2,7 +2,8 @@
 using Microsoft.AspNetCore.Mvc;
 using CodeFlip.CodeJar.Api.Models;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Azure.Storage.Blob;
+using Microsoft.Extensions.Logging;
+
 
 namespace CodeFlip.CodeJar.Api.Controllers
 {
@@ -10,51 +11,36 @@ namespace CodeFlip.CodeJar.Api.Controllers
     public class CampaginsController : ControllerBase
     {
 
-        SQL foo {get;set;}
-
-        private IConfiguration _config { get; set; }
-
-
-        public ctr(IConfiguration Config)
+        public CampaginsController(IConfiguration config)
         {
-           _config = Config;
+            _config = config;
         }
+        private IConfiguration _config;
 
-        public CloudBlockBlob CBB { get; set; }
 
 
         [HttpGet("campaigns")]
         public IActionResult GetAllCampaigns()
         {
 
-            //CloudBlockBlob foo = new CloudBlockBlob(_config.GetSection("SeedBlobUrl").DownloadRangeToByteArray());
-            //var sql = new SQL(_config.GetConnectionString("SQLConnnection"), _config.GetSection("SeedBlobUrl"));
-
-
-            return Ok(
-                new[]
-                {
-                    new { id = "1", name = "campaign 01", numberOfCodes = "10", dateActive = DateTime.Now, dateExpires = DateTime.Now.AddDays(1) },
-                    new { id = "2", name = "campaign 02", numberOfCodes = "100", dateActive = DateTime.Now.AddDays(1), dateExpires = DateTime.Now.AddDays(2) },
-                    new { id = "3", name = "campaign 03", numberOfCodes = "1000", dateActive = DateTime.Now.AddDays(2), dateExpires = DateTime.Now.AddDays(3) }
-                }
-            );
+            return Ok();
         }
 
         [HttpGet("campaigns/{id}")]
         public IActionResult GetCampaign(int id)
         {
-            return Ok(new { id = "1", name = "campaign 01", numberOfCodes = "10", dateActive = DateTime.Now, dateExpires = DateTime.Now.AddDays(1) });
+            return Ok();
         }
 
         [HttpPost("campaigns")]
-        public IActionResult CreateCampaign([FromBody] CreateCampaignRequest request)
+        public IActionResult CreateCampaign([FromBody] CreateCampaignRequest request, Campaign campaign)
         {
-            var sql = new SQL(_config.GetConnectionString("SQLConnnection"), _config.GetSection("SeedBlobUrl"));
+            var sql = new SQL(_config.GetConnectionString("SQLConnnection"));
+            //var binaryFile = new (_config.GetSection("SeedBlobUrl")
 
-            sql.CreateCampaign();
+            sql.CreateCampaign(campaign);
 
-            return Ok();
+            return Ok(campaign);
         }
 
         [HttpDelete("campaigns/{id}")]
@@ -66,14 +52,7 @@ namespace CodeFlip.CodeJar.Api.Controllers
         [HttpGet("campaigns/{id}/codes")]
         public IActionResult GetCodes([FromRoute] int id, [FromQuery] int page)
         {
-            return Ok(
-                new
-                {
-                    pageNumber = page,
-                    pageCount = 1,
-                    codes = new[] { new { stringValue = "ASKJSJQ", state = 1 }, new { stringValue = "AWEORJZ", state = 2 } }
-                }
-            );
+            return Ok();
         }
 
         [HttpDelete("campaigns/{campaignId}/codes/{code}")]

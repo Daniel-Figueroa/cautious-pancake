@@ -46,7 +46,7 @@ namespace CodeFlip.CodeJar.Api
                 var c = code[code.Length - 1 - i];
                 var index = _alphabet.IndexOf(c);
                 var p = index * (int)Math.Pow(_alphabet.Length, i);
-                
+
                 result = result + p;
             }
 

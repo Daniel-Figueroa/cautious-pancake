@@ -16,7 +16,7 @@ namespace CodeFlip.CodeJar.Api
         public static byte Redeemed = 1;
         public static byte Inactive = 2;
 
-        public static byte ConvertToString(byte state)
+        public static string ConvertToString(byte state)
         {
             var stateString = "";
 
@@ -35,9 +35,7 @@ namespace CodeFlip.CodeJar.Api
                     stateString = "";
                     break;
             }
-            Convert.ToByte(stateString);
-            
-            return state;
+            return stateString;
         }
     }
 }
