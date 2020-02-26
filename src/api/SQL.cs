@@ -38,9 +38,6 @@ namespace CodeFlip.CodeJar.Api
             };
             return campaign;
         }
-
-
-
         public void CreateCampaign(Campaign campaign)
         {
             //campaign = HardCodedCampaignData();
@@ -57,11 +54,11 @@ namespace CodeFlip.CodeJar.Api
                 command.CommandText = @"DECLARE @codeIDStart int
                 SET @codeIDStart = (SELECT ISNULL(MAX(CodeIDEnd),0)FROM Campaign) + 1
                 INSERT INTO Campaign (CampaignName, CodeIDStart, CampaignSize)
-                VALUES (@campiagnName, @codeIDStart, @batchSize)
+                VALUES (@campiagnName, @codeIDStart, @campaignSize)
                 SELECT SCOPE_IDENTITY()";
                 command.Parameters.AddWithValue("@campaignName", campaign.CampaignName);
                 command.Parameters.AddWithValue("@codeIDStart", campaign.CodeIDStart);
-                command.Parameters.AddWithValue("@batchSize", campaign.CampaignSize);
+                command.Parameters.AddWithValue("@campaignSize", campaign.CampaignSize);
                 campaign.ID = Convert.ToInt32(command.ExecuteScalar());
 
                 CreateDigitalCode(command, campaign.CampaignSize, campaign);
@@ -77,11 +74,11 @@ namespace CodeFlip.CodeJar.Api
         {
             using (BinaryReader reader = new BinaryReader(File.Open(FilePath, FileMode.Open)))
             {
-
                 var firstLastOffset = UpdateOffset(command, campaignSize);
+
                 if (firstLastOffset[0] % 4 != 0)
                 {
-                    throw new ArgumentException("Offset must be divisible by 4");
+                    throw new ArgumentException("Offset Must be divisable by 4");
                 }
                 for (var i = firstLastOffset[0]; i < firstLastOffset[1]; i += 4)
                 {
@@ -110,35 +107,6 @@ namespace CodeFlip.CodeJar.Api
             firstLastOffset[0] = updatedOffset - incrementedOffset;
             firstLastOffset[1] = updatedOffset;
             return firstLastOffset;
-        }
-
-        public List<Campaign> GetCampaigns()
-        {
-            var campaigns = new List<Campaign>();
-            Connection.Open();
-            using (var command = Connection.CreateCommand())
-            {
-                command.CommandText = @"SELECT * FROM Campaign";
-                using (var reader = command.ExecuteReader())
-                {
-                    while (reader.Read())
-                    {
-                        var campaign = new Campaign
-                        {
-                            ID = (int)reader["ID"],
-                            CampaignName = (string)reader["CampaignName"],
-                            CodeIDStart = (int)reader["CodeIDStart"],
-                            CodeIDEnd = (int)reader["CodeIDEnd"],
-                            CampaignSize = (int)reader["CampaignSize"],
-                            DateActive = (DateTime)reader["DateActive"],
-                        };
-                        campaigns.Add(campaign);
-                    }
-                }
-            }
-            Connection.Close();
-
-            return campaigns;
         }
 
         public void DeactiveCode(string alphabet, string code)
@@ -174,7 +142,6 @@ namespace CodeFlip.CodeJar.Api
                 command.Parameters.AddWithValue("@codeIDEnd", campaign.CodeIDEnd);
                 command.ExecuteNonQuery();
             }
-
             Connection.Close();
         }
         public int CheckIfCodeCanBeRedeemed(string code, string alphabet)
@@ -202,6 +169,106 @@ namespace CodeFlip.CodeJar.Api
                 return codeID;
             }
             return -1;
+        }
+        public int PageCount(int id)
+        {
+            var pages = 0;
+            var Remainder = 0;
+
+            Connection.Open();
+
+            using (var command = Connection.CreateCommand())
+            {
+                command.CommandText = @"SELECT CampaignSize FROM Campaign WHERE ID = id";
+                command.Parameters.AddWithValue("@id", id);
+
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var pageNumber = (int)reader["CampaignSize"];
+
+                        pages = pageNumber / 10;
+
+                        Remainder = pageNumber % 10;
+
+                        if (Remainder > 0)
+                        {
+                            pages++;
+                        }
+                    }
+                }
+            }
+            Connection.Close();
+            return pages;
+        }
+
+        public List<Campaign> GetCampaigns()
+        {
+            var campaigns = new List<Campaign>();
+            Connection.Open();
+            using (var command = Connection.CreateCommand())
+            {
+                command.CommandText = @"SELECT * FROM Campaign";
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var campaign = new Campaign
+                        {
+                            ID = (int)reader["ID"],
+                            CampaignName = (string)reader["CampaignName"],
+                            CodeIDStart = (int)reader["CodeIDStart"],
+                            CodeIDEnd = (int)reader["CodeIDEnd"],
+                            CampaignSize = (int)reader["CampaignSize"],
+                            DateActive = (DateTime)reader["DateActive"],
+                        };
+                        campaigns.Add(campaign);
+                    }
+                }
+            }
+            Connection.Close();
+            return campaigns;
+        }
+
+        public List<Code> GetCodes(int campaignID, string alphabet, int pageNumber, int pageSize)
+        {
+            var codes = new List<Code>();
+            Connection.Open();
+
+            var page = Pagination.PaginationPageNumber(pageNumber, pageSize);
+
+            using (var command = Connection.CreateCommand())
+            {
+
+                command.CommandText = @"DECLARE @codeIDStart int
+                DECLARE @codeIDEnd int
+                SET @codeIDStart = (SELECT CodeIDStart FROM Campaign WHERE ID = @campaignID)
+                SET @codeIDEnd = (SELECT CodeIDEnd FROM Campaign WHERE ID = @campaignID)
+
+                SELECT * FROM Codes WHERE ID BETWEEN @codeIDStart AND @codeIDEnd
+                ORDER BY ID OFFSET @page ROWS FETCH NEXT @pageSize ROWS ONLY";
+
+                command.Parameters.AddWithValue("@page", page);
+                command.Parameters.AddWithValue("@pageSize", pageSize);
+                command.Parameters.AddWithValue("@CampaignID", campaignID);
+
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var code = new Code();
+                        var seedValue = (int)reader["SeedValue"];
+                        var codeConverter = new CodeConverter(alphabet);
+
+                        code.State = State.ConvertToString((byte)reader["State"]);
+                        code.StringValue = codeConverter.ConvertToCode(seedValue);
+                        codes.Add(code);
+                    }
+                }
+            }
+            Connection.Close();
+            return codes;
         }
 
 
