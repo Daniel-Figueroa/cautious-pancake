@@ -1,67 +1,41 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Threading.Tasks;
-using Microsoft.AspNetCore.Hosting;
-using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Hosting;
-using Microsoft.Extensions.Logging;
-using System.Data;
 using System.Data.SqlClient;
-using System.Text;
-using System.IO;
-using Microsoft.Azure.Storage.Blob;
 
 
 namespace CodeFlip.CodeJar.Api
 {
     public class SQL
     {
-        public SQL(string connectionString, string filePath)
+        public SqlConnection Connection { get; set; }
+        public SQL(string connectionString)
         {
             Connection = new SqlConnection(connectionString);
-            FilePath = filePath;
         }
-        public SqlConnection Connection { get; set; }
-        public string FilePath { get; set; }
 
-        public Campaign HardCodedCampaignData()
+        public void CreateCampaign(List<Code> codes, Campaign campaign)
         {
-            var campaign = new Campaign
-            {
-                ID = 1,
-                CampaignName = "Test",
-                CodeIDStart = 1,
-                CodeIDEnd = 10,
-                CampaignSize = 10,
-                DateActive = DateTime.Now
-            };
-            return campaign;
-        }
-        public void CreateCampaign(Campaign campaign)
-        {
-            //campaign = HardCodedCampaignData();
-            //var campaignSize = campaign.CampaignSize;
-
-            SqlTransaction transaction;
             Connection.Open();
-            transaction = Connection.BeginTransaction();
+
             var command = Connection.CreateCommand();
+            var transaction = Connection.BeginTransaction();
             command.Transaction = transaction;
 
             try
             {
-                command.CommandText = @"DECLARE @codeIDStart int
-                SET @codeIDStart = (SELECT ISNULL(MAX(CodeIDEnd),0)FROM Campaign) + 1
-                INSERT INTO Campaign (CampaignName, CodeIDStart, CampaignSize)
-                VALUES (@campiagnName, @codeIDStart, @campaignSize)
-                SELECT SCOPE_IDENTITY()";
+                command.CommandText = @"
+                DECLARE @codeIDStart int
+                SET @codeIDStart = (SELECT ISNULL(MAX(CodeIDEnd), 0)FROM Campaign) + 1
+                INSERT INTO Campaign (CampaignName, CampaignSize, CodeIDStart)
+                VALUES (@campaignName,  @campaignSize, @codeIDStart)
+                SELECT SCOPE_IDENTITY()
+                ";
                 command.Parameters.AddWithValue("@campaignName", campaign.CampaignName);
-                command.Parameters.AddWithValue("@codeIDStart", campaign.CodeIDStart);
                 command.Parameters.AddWithValue("@campaignSize", campaign.CampaignSize);
                 campaign.ID = Convert.ToInt32(command.ExecuteScalar());
 
-                CreateDigitalCode(command, campaign.CampaignSize, campaign);
+                CreateDigitalCode(codes, command);
+                transaction.Commit();
             }
             catch (Exception foo)
             {
@@ -70,46 +44,44 @@ namespace CodeFlip.CodeJar.Api
             Connection.Close();
         }
 
-        public void CreateDigitalCode(SqlCommand command, int campaignSize, Campaign campaign)
+        public void CreateDigitalCode(List<Code> codes, SqlCommand command)
         {
-            using (BinaryReader reader = new BinaryReader(File.Open(FilePath, FileMode.Open)))
+            foreach (var code in codes)
             {
-                var firstLastOffset = UpdateOffset(command, campaignSize);
+                command.CommandText = @"
+                INSERT INTO Codes (State, SeedValue)
+                VALUES (@state, @seedValue)";
 
-                if (firstLastOffset[0] % 4 != 0)
-                {
-                    throw new ArgumentException("Offset Must be divisable by 4");
-                }
-                for (var i = firstLastOffset[0]; i < firstLastOffset[1]; i += 4)
-                {
-
-                    reader.BaseStream.Position = i;
-                    var seedvalue = reader.ReadInt32();
-
-                    command.CommandText = $@"INSERT INTO Codes (SeedValue, State) VALUES (@Seedvalue, @Active)";
-                    command.Parameters.AddWithValue("@Seedvalue", seedvalue);
-                    command.Parameters.AddWithValue("@Active", State.Active);
-                    command.ExecuteNonQuery();
-                }
+                command.Parameters.Clear();
+                command.Parameters.AddWithValue("@state", State.Active);
+                command.Parameters.AddWithValue("@seedValue", code.SeedValue);
+                command.ExecuteNonQuery();
             }
         }
-        public long[] UpdateOffset(SqlCommand command, int campaignSize)
+        public long[] UpdateOffset(int campaignSize)
         {
             var firstLastOffset = new long[2];
             var incrementedOffset = campaignSize * 4;
-            command.CommandText = @"UPDATE Offset
-            SET OffsetValue = OffsetValue + @incrementedOffset
-            OUTPUT INSERTED.OffsetValue
-            WHERE ID = 1";
-            command.Parameters.AddWithValue("@incrementedOffset", incrementedOffset);
-            var updatedOffset = (long)command.ExecuteScalar();
+            Connection.Open();
 
-            firstLastOffset[0] = updatedOffset - incrementedOffset;
-            firstLastOffset[1] = updatedOffset;
+            using (var command = Connection.CreateCommand())
+            {
+                command.CommandText = @"
+                UPDATE Offset SET OffsetValue = OffsetValue + @incrementedOffset
+                OUTPUT INSERTED.OffsetValue WHERE ID = 1";
+                command.Parameters.AddWithValue("@incrementedOffset", incrementedOffset);
+                var updatedOffset = (long)command.ExecuteScalar();
+
+
+                firstLastOffset[0] = updatedOffset - incrementedOffset;
+                firstLastOffset[1] = updatedOffset;
+            }
+            Connection.Close();
+
             return firstLastOffset;
         }
 
-        public void DeactiveCode(string alphabet, string code)
+        public void DeactivateCode(string alphabet, string code)
         {
             var codeConverter = new CodeConverter(alphabet);
             var seedValue = codeConverter.ConvertFromCode(code);
@@ -127,28 +99,36 @@ namespace CodeFlip.CodeJar.Api
             }
             Connection.Close();
         }
-        public void DeactivateCampaign(Campaign campaign)
+        public bool DeactivateCampaign(int id)
         {
+            int codes;
             Connection.Open();
 
             using (var command = Connection.CreateCommand())
             {
-                command.CommandText = @"UPDATE Codes SET [State] = @inactive
-                WHERE ID BETWEEN @codeIDStart AND @codeIDEnd AND [State] = @active";
-
-                command.Parameters.AddWithValue("@inactive", State.Inactive);
+                command.CommandText = @"
+                DECLARE @codeIDStart int
+                DECLARE @codeIDEnd int
+                SET @codeIDStart = (SELECT CodeIDStart FROM Campaign WHERE ID = @id)
+                SET @codeIDEnd = (SELECT CodeIDEnd FROM Campaign WHERE ID = @id)
+                UPDATE Codes SET [State] = @inactive
+                WHERE ID BETWEEN @codeIDStart AND @codeIDEnd
+                AND [State] = @active";
                 command.Parameters.AddWithValue("@active", State.Active);
-                command.Parameters.AddWithValue("@codeIDStart", campaign.CodeIDStart);
-                command.Parameters.AddWithValue("@codeIDEnd", campaign.CodeIDEnd);
-                command.ExecuteNonQuery();
+                command.Parameters.AddWithValue("@inactive", State.Inactive);
+                command.Parameters.AddWithValue("@id", id);
+                codes = command.ExecuteNonQuery();
             }
-            Connection.Close();
-        }
-        public int CheckIfCodeCanBeRedeemed(string code, string alphabet)
-        {
 
-            var codeConverter = new CodeConverter(alphabet);
-            var seedValue = codeConverter.ConvertFromCode(code);
+            Connection.Close();
+            if (codes >= 1)
+            {
+                return true;
+            }
+            return false;
+        }
+        public int CheckIfCodeCanBeRedeemed(int seedValue, string code)
+        {
             int codeID = 0;
             Connection.Open();
 
@@ -176,7 +156,6 @@ namespace CodeFlip.CodeJar.Api
             var Remainder = 0;
 
             Connection.Open();
-
             using (var command = Connection.CreateCommand())
             {
                 command.CommandText = @"SELECT CampaignSize FROM Campaign WHERE ID = id";
@@ -203,7 +182,7 @@ namespace CodeFlip.CodeJar.Api
             return pages;
         }
 
-        public List<Campaign> GetCampaigns()
+        public List<Campaign> GetAllCampaigns()
         {
             var campaigns = new List<Campaign>();
             Connection.Open();
@@ -221,7 +200,6 @@ namespace CodeFlip.CodeJar.Api
                             CodeIDStart = (int)reader["CodeIDStart"],
                             CodeIDEnd = (int)reader["CodeIDEnd"],
                             CampaignSize = (int)reader["CampaignSize"],
-                            DateActive = (DateTime)reader["DateActive"],
                         };
                         campaigns.Add(campaign);
                     }
@@ -230,18 +208,68 @@ namespace CodeFlip.CodeJar.Api
             Connection.Close();
             return campaigns;
         }
+        public Campaign GetCampaignByID(int id)
+        {
+            var campaign = new Campaign();
+            Connection.Open();
+            using (var command = Connection.CreateCommand())
+            {
+                command.CommandText = @"SELECT ID, CampaignName, CampaignSize FROM Campaign WHERE ID = @id";
+                command.Parameters.AddWithValue("@id", id);
+                using (var reader = command.ExecuteReader())
+                {
+                    if (reader.Read())
+                    {
+                        campaign.ID = (int)reader["ID"];
+                        campaign.CampaignName = (string)reader["CampaignName"];
+                        campaign.CampaignSize = (int)reader["CampaignSize"];
+                    }
+                }
+            }
+            Connection.Close();
+            return campaign;
+        }
+        public Code GetCode(string stringValue, CodeConverter codeConverter)
+        {
+            var seedValue = codeConverter.ConvertFromCode(stringValue);
+            var code = new Code();
+
+            Connection.Open();
+            using (var command = Connection.CreateCommand())
+            {
+                command.CommandText = @"SELECT * FROM Codes WHERE SeedValue = @seedValue";
+                command.Parameters.AddWithValue("@seedValue", seedValue);
+
+                using (var reader = command.ExecuteReader())
+                {
+                    while (reader.Read())
+                    {
+                        var seed = (int)reader["SeedValue"];
+                        code.State = State.ConvertToString((byte)reader["State"]);
+                        code.StringValue = codeConverter.ConvertToCode(seed);
+                    }
+                }
+            }
+            Connection.Close();
+
+            return code;
+        }
 
         public List<Code> GetCodes(int campaignID, string alphabet, int pageNumber, int pageSize)
         {
             var codes = new List<Code>();
+            var page = Pagination.PaginationPageNumber(pageNumber, pageSize);
+            var codeConverter = new CodeConverter(alphabet);
+
+
             Connection.Open();
 
-            var page = Pagination.PaginationPageNumber(pageNumber, pageSize);
 
             using (var command = Connection.CreateCommand())
             {
 
-                command.CommandText = @"DECLARE @codeIDStart int
+                command.CommandText = @"
+                DECLARE @codeIDStart int
                 DECLARE @codeIDEnd int
                 SET @codeIDStart = (SELECT CodeIDStart FROM Campaign WHERE ID = @campaignID)
                 SET @codeIDEnd = (SELECT CodeIDEnd FROM Campaign WHERE ID = @campaignID)
@@ -259,8 +287,6 @@ namespace CodeFlip.CodeJar.Api
                     {
                         var code = new Code();
                         var seedValue = (int)reader["SeedValue"];
-                        var codeConverter = new CodeConverter(alphabet);
-
                         code.State = State.ConvertToString((byte)reader["State"]);
                         code.StringValue = codeConverter.ConvertToCode(seedValue);
                         codes.Add(code);
@@ -270,7 +296,5 @@ namespace CodeFlip.CodeJar.Api
             Connection.Close();
             return codes;
         }
-
-
     }
 }

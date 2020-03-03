@@ -17,6 +17,5 @@ namespace CodeFlip.CodeJar.Api
         public int CodeIDStart { get; set; }
         public int CodeIDEnd { get; set; }
         public int CampaignSize { get; set; }
-        public DateTime DateActive { get; set; }
     }
 }

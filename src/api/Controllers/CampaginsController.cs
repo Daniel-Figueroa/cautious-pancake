@@ -2,6 +2,7 @@
 using Microsoft.AspNetCore.Mvc;
 using CodeFlip.CodeJar.Api.Models;
 using Microsoft.Extensions.Configuration;
+using System.Data.SqlClient;
 using Microsoft.Extensions.Logging;
 
 
@@ -17,45 +18,51 @@ namespace CodeFlip.CodeJar.Api.Controllers
         }
         private IConfiguration _config;
 
-
-
         [HttpGet("campaigns")]
         public IActionResult GetAllCampaigns()
         {
-            var sql = new SQL(_config.GetConnectionString("SQLConnnection"), _config.GetSection("BinaryFile")["Binary"]);
+            var sql = new SQL(_config.GetConnectionString("SQLConnnection"));
 
-            return Ok(sql.GetCampaigns());
+            return Ok(sql.GetAllCampaigns());
         }
 
         [HttpGet("campaigns/{id}")]
         public IActionResult GetCampaign(int id)
         {
-            return Ok();
+            var sql = new SQL(_config.GetConnectionString("SQLConnnection"));
+            return Ok(sql.GetCampaignByID(id));
         }
 
         [HttpPost("campaigns")]
-        public IActionResult CreateCampaign([FromBody] CreateCampaignRequest request, Campaign campaign)
+        public IActionResult CreateCampaign([FromBody] CreateCampaignRequest request)
         {
-            //var binaryFile = new (_config.GetSection("SeedBlobUrl")
-
-            if (campaign.DateActive >= DateTime.Now.Date)
+            if (request.campaignSize >= 1 && request.campaignSize <= 30000)
             {
-                var sql = new SQL(_config.GetConnectionString("SQLConnnection"), _config.GetSection("BinaryFile")["Binary"]);
-                sql.CreateCampaign(campaign);
+                var campaign = new Campaign()
+                {
+                    CampaignName = request.campaignName,
+                    CampaignSize = request.campaignSize
+                };
+
+                var cloudPath = new CloudPath(_config.GetSection("SeedBlobUrl")["BlobUrl"]);
+                var sql = new SQL(_config.GetConnectionString("SQLConnnection"));
+
+                var offsetUpdate = sql.UpdateOffset(campaign.CampaignSize);
+                var listOfCodes = cloudPath.GenerateCodesFromCloudFile(offsetUpdate);
+
+                sql.CreateCampaign(listOfCodes, campaign);
 
                 return Ok(campaign);
             }
-            else
-            {
-                return BadRequest();
-            }
+            return BadRequest();
         }
 
         [HttpDelete("campaigns/{id}")]
         public IActionResult DeactivateCampaign(int id, [FromBody] Campaign campaign)
         {
-            var sql = new SQL(_config.GetConnectionString("SQLConnnection"), _config.GetSection("BinaryFile")["Binary"]);
-            sql.DeactivateCampaign(campaign);
+            var sql = new SQL(_config.GetConnectionString("SQLConnnection"));
+
+            sql.DeactivateCampaign(id);
 
             return Ok();
         }
@@ -63,21 +70,24 @@ namespace CodeFlip.CodeJar.Api.Controllers
         [HttpGet("campaigns/{id}/codes")]
         public IActionResult GetCodes([FromRoute] int id, [FromQuery] int page)
         {
-            var sql = new SQL(_config.GetConnectionString("SQLConnnection"), _config.GetSection("BinaryFile")["Binary"]);
+            var sql = new SQL(_config.GetConnectionString("SQLConnnection"));
             var pageSize = Convert.ToInt32(_config.GetSection("Pagination")["PageNumber"]);
-            var pages = sql.PageCount(id);
             var alphabet = _config.GetSection("Base26")["Alphabet"];
-            var codes = sql.GetCodes(id, alphabet, page, pageSize);
 
-            return Ok(new TableData(codes, pages));
+            var codes = sql.GetCodes(id, alphabet, page, pageSize);
+            var pages = sql.PageCount(id);
+
+
+            return Ok(new TableData(codes, pages, page));
         }
 
         [HttpDelete("campaigns/{campaignId}/codes/{code}")]
         public IActionResult DeactivateCode([FromRoute] int campaignId, [FromRoute] string code)
         {
-            var sql = new SQL(_config.GetConnectionString("SQLConnnection"), _config.GetSection("BinaryFile")["Binary"]);
+            var sql = new SQL(_config.GetConnectionString("SQLConnnection"));
             var alphabet = _config.GetSection("Base26")["Alphabet"];
-            sql.DeactiveCode(alphabet,code);
+
+            sql.DeactivateCode(alphabet, code);
 
             return Ok();
         }
@@ -85,12 +95,25 @@ namespace CodeFlip.CodeJar.Api.Controllers
         [HttpPost("codes/{code}")]
         public IActionResult RedeemCode([FromRoute] string code)
         {
-            var sql = new SQL(_config.GetConnectionString("SQLConnnection"), _config.GetSection("BinaryFile")["Binary"]);
-            var alphabet = _config.GetSection("Base26")["Alphabet"];
-            
-            sql.CheckIfCodeCanBeRedeemed(code,alphabet);
+            var sql = new SQL(_config.GetConnectionString("SQLConnnection"));
+            var codeConverter = new CodeConverter(_config.GetSection("Base26")["Alphabet"]);
+            var seedValue = codeConverter.ConvertFromCode(code);
+
+            sql.CheckIfCodeCanBeRedeemed(seedValue, code);
 
             return Ok();
+        }
+
+        [HttpGet("codes/{code}")]
+        public IActionResult SearchCode([FromRoute]string code)
+        {
+            var sql = new SQL(_config.GetConnectionString("SQLConnnection"));
+            var codeConverter = new CodeConverter(_config.GetSection("Base26")["Alphabet"]);
+            var seedValue = codeConverter.ConvertFromCode(code);
+
+            sql.GetCode(code, codeConverter);
+
+            return Ok(code);
         }
     }
 }

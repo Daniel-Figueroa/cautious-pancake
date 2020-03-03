@@ -11,15 +11,13 @@ namespace CodeFlip.CodeJar.Api
     {
         public static int PaginationPageNumber(int pageNumber, int pageSize)
         {
-            var p = pageNumber;
+            var page = pageNumber;
 
-             p--;
-
-            if(p > 0)
+            if(page > 0)
             {
-                p *= pageSize;
+                page *= pageSize;
             }
-            return p;
+            return page;
         }
     }
 }

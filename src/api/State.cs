@@ -24,7 +24,7 @@ namespace CodeFlip.CodeJar.Api
             {
                 case 0:
                     stateString = "Active";
-                break;
+                    break;
                 case 1:
                     stateString = "Redeemed";
                     break;
@@ -36,6 +36,25 @@ namespace CodeFlip.CodeJar.Api
                     break;
             }
             return stateString;
+        }
+        public static byte ConvertToByte(string state)
+        {
+            byte stateByte = 0;
+
+            switch (state)
+            {
+                case "Active":
+                    stateByte = 0;
+                    break;
+                case "Redeemed":
+                    stateByte = 1;
+                    break;
+                case "Inactive":
+                    stateByte = 2;
+                    break;
+            }
+
+            return stateByte;
         }
     }
 }
